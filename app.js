@@ -18,7 +18,7 @@ const verifysfz = require('./util/sfz')
 const sql = require('./util/mysql/index')
 
 // 工具
-const { rand, sign ,invatation } = require('./util/tools')
+const { rand, sign, invatation } = require('./util/tools')
 
 //jwt token
 const { jwtSign, verify } = require('./util/jwt/index')
@@ -77,9 +77,9 @@ app.post('/login', (req, res) => {
     if (req.body.sign && sign(req.body.sign)) {
         sql(`select uid,password from user where phone = "${req.body.phone}"`).then(r => {
             if (r[0] && r[0].password == req.body.password) {
-                res.status(200).send({ code: 200, msg: '登陆成功', token: jwtSign({uid:r[0].uid}) })
+                res.status(200).send({ code: 200, msg: '登陆成功', token: jwtSign({ uid: r[0].uid }) })
             } else {
-                res.status(200).send({ code:401, msg: '账号或密码错误，请重试' })
+                res.status(200).send({ code: 401, msg: '账号或密码错误，请重试' })
             }
         }).catch(e => {
             console.log(e);
@@ -94,14 +94,14 @@ app.post('/login', (req, res) => {
 app.post('/sms-send', (req, res) => {
     let code = rand(100000, 999999)
     if (req.body.sign && sign(req.body.sign)) {
-        sql(`select phone from user where phone = "${req.body.phone}"`).then(r=>{
-            if(r[0]){
-                res.status(200).send({code:201,msg:"该手机号已被注册"})
-            }else{
+        sql(`select phone from user where phone = "${req.body.phone}"`).then(r => {
+            if (r[0]) {
+                res.status(200).send({ code: 201, msg: "该手机号已被注册" })
+            } else {
                 sendSms(req.body.phone, code, success => {
                     if (success.SendStatusSet[0].Code == 'Ok') {
                         sql(`insert into code (msgId,code,stamp) values ("${success.RequestId}","${code}","${new Date().getTime()}")`).then(r => {
-                            res.status(200).send({code:200,msgId:success.RequestId});
+                            res.status(200).send({ code: 200, msgId: success.RequestId });
                         }).catch(e => {
                             res.status(500).send({ code: 500, msg: '服务器异常' });
                         })
@@ -112,7 +112,7 @@ app.post('/sms-send', (req, res) => {
                     res.status(500).send({ code: 500, msg: '服务器异常' });
                 })
             }
-        }).catch(e=>res.status(500).send({code: 500, msg:"服务器异常"}))
+        }).catch(e => res.status(500).send({ code: 500, msg: "服务器异常" }))
     } else {
         res.status(200).send({ code: 401, msg: '非法请求' })
     }
@@ -142,29 +142,62 @@ app.get('/checkPay', (req, res) => {
 })
 
 //sfz认证四要素
-app.post('/verifysfz', (req, res) => {
+app.post('/nametrue', (req, res) => {
     if (req.body.sign && sign(req.body.sign)) {
-        sql(`select phone,nametrue from where phone = "${req.body.mobile}"`).then(r=>{
-            if(r[0].phone && !vip=="0"){
-                verifysfz(req.body, (error, success) => {
-                    if (error) {
-                        res.status(200).send({ result: 2, msg: '当前火爆，请稍后再试' })
+        verify(req.headers.authorization, (ee, rr) => {
+            if (ee) {
+                res.status(401).send({ code: 401, msg: "非法请求" })
+            } else {
+                sql(`select phone,nametrue from user where uid = ${rr.uid}`).then(r => {
+                    if (r[0].phone == req.body.mobile && r[0].nametrue == "1") {
+                        verifysfz(req.body, (error, success) => {
+                            if (error) {
+                                res.status(200).send({ result: 3, msg: '当前火爆，请稍后再试' })
+                            } else {
+                                if (success.data.result == 0) {
+                                    sql(`update user set name="${req.body.name}",mobile="${req.body.mobile}",bankcard="${req.body.bankcard}",idcard="${req.body.idcard}",nametrue="0" where uid = ${rr.uid}`).then(rrr => {
+                                        res.status(200).send({ result: 0, msg: '认证成功' })
+                                    }).catch(eee => {
+                                        console.log(eee);
+                                        res.status(500).send({ code: 500, msg: "服务器异常，请重试" })
+                                    })
+                                } else {
+                                    res.status(200).send({ result: 1, msg: '请输入正确的信息' })
+                                }
+                            }
+                        });
                     } else {
-                        if (success.data.result == 0) {
-                            res.status(200).send({ result: 0, msg: '认证成功' })
-                        } else {
-                            res.status(200).send({ result: 1, msg: '请输入正确的信息' })
-                        }
+                        res.status(200).send({ result: 2, msg: '手机号码不匹配,或已经被实名' })
                     }
-                });
-            }else{
-                res.status(200).send({ result: 1, msg: '手机号码不匹配,或已经被实名' })
+                }).catch(e => {
+                    res.status(500).send({ code: 500, msg: "服务器异常，请重试" })
+                })
             }
-        }).catch(e=>{
-            res.status(500).send({code:500,msg:"服务器异常，请重试"})
         })
+    } else {
+        res.status(401).send({ code: 401, msg: "非法请求" })
+    }
+})
+//检查是否认证
+app.post('/checknametrue',(req,res)=>{
+    if(req.body.sign && sign(req.body.sign)){
+        verify(req.headers.authorization, (ee, rr) => {
+            if(ee){
+                res.status(401).send({ code: 401, msg: "非法请求" })
+            }else{
+                sql(`select nametrue from user where uid = ${rr.uid}`).then(r=>{
+                    if(r[0].nametrue == "0"){
+                        res.status(200).send({result:0,msg:"已经实名过了"})
+                    }else{
+                        res.status(200).send({result:1,msg:"请实名"})
+                    }
+                }).catch(e=>{
+                    res.status(500).send({ code: 500, msg: "服务器错误" })
+                })
+            }
+        });
     }else{
-        res.status(401).send({code:401,msg:"非法请求"})
+        res.status(401).send({ code: 401, msg: "非法请求" })
     }
 })
 
