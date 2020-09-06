@@ -39,7 +39,7 @@ app.all("*", function (req, res, next) {
         res.status(200).send({ msg: "success" });
     }
     else {
-        //req.body.sign && sign(req.body.sign)
+        //req.body.sign && parseInt(sign(req.body.sign),16)
         if (true) {
             next();
         }
@@ -61,9 +61,9 @@ app.get('/sfz', (req, res) => {
 //注册
 app.post('/register', (req, res) => {
     let params = req.body;
-    sql(`select * from code where msgId = "${params.msgId}"`).then(r => {
+    sql(`select * from code where msgId = "${params.msgId}" order by stamp desc limit 1`).then(r => {
         if (r[0].code == params.code && new Date().getTime() - r[0].stamp < 300000) {
-            sql(`insert into user (uid,nickname,phone,password,tradepassword,invatation,invatationcode,vip,nametrue,coin,usdt,suanli) values (uid,"${params.nickname}","${params.phone}","${params.password}","${params.tradepassword}","${params.invatation}","${invatation()}","1","1","0.000","0.000","0.000")`).then(r => {
+            sql(`insert into user (uid,nickname,phone,password,tradepassword,invatation,invatationcode,zftrue,nametrue,coin,usdt,suanli,invatate,registertime) values (uid,"${params.nickname}","${params.phone}","${params.password}","${params.tradepassword}","${params.invatation}","${invatation()}","1","1","0.000","0.000","0.000","0","${new Date().getTime()}")`).then(r => {
                 res.status(200).send({ code: 200, msg: '注册成功' })
             }).catch(e => {
                 res.status(500).send({ code: 500, msg: '服务器异常，请重试' })
@@ -171,7 +171,7 @@ app.post("/bindzfpay", (req, res) => {
         if (ee) {
             res.status(401).send({ code: 401, msg: "非法请求" })
         } else {
-            sql(`select nametrue,zftrue from user where uid = ${rr.uid}`).then(r => {
+            sql(`select nametrue,zftrue,invatation from user where uid = ${rr.uid}`).then(r => {
                 if (r[0].nametrue == "1") {
                     res.status(200).send({ result: 1, msg: "请先进行实名认证" })
                 } else {
@@ -181,13 +181,17 @@ app.post("/bindzfpay", (req, res) => {
                         sql(`update  user set zfpay = "${req.body.zfpay}" where uid = "${rr.uid}"`).then(rrr => {
                             sql(`update  user set zftrue = "0" where uid = "${rr.uid}"`).then(rrrr => {
                                 sql(`insert into buycomputer (uid,id,name,price,suanli,day,output,date) values ("${rr.uid}","A3820","体验矿机","0.000","0.000","40","10.000","${new Date().getTime()}")`).then(rrrrr => {
-                                    sql(`insert into recover (uid,coin,date) values("${rr.uid}","0.000","${new Date().getTime()}")`).then(r_ => {
-                                        res.status(200).send({ result: 0, msg: "支付宝认证成功" });
+                                    sql(`insert into recover (uid,coin,date) values("${rr.uid}","0.000","${new Date().getTime() - 86400000}")`).then(r_ => {
+                                        sql(`update user set invatate = invatate*1+1+"" where invatationcode = "${r[0].invatation}"`).then(result => {
+                                            res.status(200).send({ result: 0, msg: "支付宝认证成功" });
+                                        }).catch(error => {
+                                            console.log(error);
+                                            res.status(500).send({ code: 500, msg: "服务器错误" })
+                                        })
                                     }).catch(e_ => {
-                                        console.log(e_)
+                                        res.status(500).send({ code: 500, msg: "服务器错误" })
                                     })
                                 }).catch(eeeee => {
-                                    console.log(eeeee);
                                     res.status(500).send({ code: 500, msg: "服务器错误" })
                                 })
                             }).catch(e => {
@@ -287,7 +291,30 @@ app.post("/recover", (req, res) => {
         if (ee) {
             res.status(401).send({ code: 401, msg: "非法请求" })
         } else {
-
+            sql(`select * from recover where uid = "${rr.uid}" order by date desc limit 1`).then(r => {
+                if (r[0].date - new Date(new Date().toLocaleDateString()).getTime() < 0) {
+                    // res.status(200).send({ code: 0, msg: "0.0001" })
+                    sql(`select suanli,day,date from buycomputer where uid = "${rr.uid}"`).then(rrr => {
+                        let suanli = rrr.map(item => {
+                            if (new Date().getTime() - item.date < (item.day + 1) * 86400000) {
+                                return item.suanli * 1
+                            }
+                        }).reduce((a, b) => a + b);
+                        sql(`update user set suanli = "${suanli.toFixed(2)}" where uid = "${rr.uid}"`).then(rrrr => {
+                            let coin = (0.2 * rrr.length + 0.3 * suanli).toFixed(3);
+                            res.status(200).send({ code: 0, r: coin })
+                        }).catch(eeee => {
+                            res.status(500).send({ code: 500, msg: "服务器错误" })
+                        })
+                    }).catch(eee => {
+                        res.status(200).send({ code: 2, msg: "请先完成实名，并且绑定支付宝" })
+                    })
+                } else {
+                    res.status(200).send({ code: 1, msg: "挖矿中..." })
+                }
+            }).catch(e => {
+                res.status(200).send({ code: 2, msg: "请先完成实名，并且绑定支付宝" })
+            })
         }
     })
 })
