@@ -23,8 +23,13 @@ function invatation(){
     };
     return r
 }
+
+function toNumber(n){
+    return n*10000
+}
 module.exports={
     rand,
     sign,
-    invatation
+    invatation,
+    toNumber
 }

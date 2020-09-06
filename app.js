@@ -18,10 +18,10 @@ const verifysfz = require('./util/sfz')
 const sql = require('./util/mysql/index')
 
 // 工具
-const { rand, sign, invatation } = require('./util/tools')
+const { rand, sign, invatation, toNumber } = require('./util/tools')
 
 //jwt token
-const { jwtSign, verify } = require('./util/jwt/index')
+const { jwtSign, verify } = require('./util/jwt/index');
 
 const app = express();
 
@@ -35,10 +35,18 @@ app.all("*", function (req, res, next) {
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Headers", "content-type,Authorization");
     res.header("Access-Control-Allow-Methods", "DELETE,PUT,POST,GET,OPTIONS");
-    if (req.method.toLowerCase() == 'options')
-        res.status(200).send('ok');
-    else
-        next();
+    if (req.method.toLowerCase() == 'options') {
+        res.status(200).send({ msg: "success" });
+    }
+    else {
+        //req.body.sign && sign(req.body.sign)
+        if (true) {
+            next();
+        }
+        else {
+            res.status(401).send({ code: 401, msg: '非法请求' })
+        }
+    }
 })
 
 app.get('/', (req, res) => {
@@ -53,73 +61,236 @@ app.get('/sfz', (req, res) => {
 //注册
 app.post('/register', (req, res) => {
     let params = req.body;
-    if (req.body.sign && sign(req.body.sign)) {
-        sql(`select * from code where msgId = "${params.msgId}"`).then(r => {
-            if (r[0].code == params.code && new Date().getTime() - r[0].stamp < 300000) {
-                sql(`insert into user (uid,nickname,phone,password,tradepassword,invatation,invatationcode,vip,nametrue,coin,usdt) values (uid,"${params.nickname}","${params.phone}","${params.password}","${params.tradepassword}","${params.invatation}","${invatation()}","1","1","0","0")`).then(r => {
-                    res.status(200).send({ code: 200, msg: '注册成功' })
-                }).catch(e => {
-                    res.status(500).send({ code: 500, msg: '服务器异常，请重试' })
-                })
-            } else {
-                res.status(200).send({ code: 401, msg: '验证码错误' })
-            }
-        }).catch(e => {
-            res.status(500).send({ code: 500, msg: '服务器异常，请重试' })
-        })
-    } else {
-        res.status(401).send({ code: 401, msg: "非法请求" });
-    }
+    sql(`select * from code where msgId = "${params.msgId}"`).then(r => {
+        if (r[0].code == params.code && new Date().getTime() - r[0].stamp < 300000) {
+            sql(`insert into user (uid,nickname,phone,password,tradepassword,invatation,invatationcode,vip,nametrue,coin,usdt,suanli) values (uid,"${params.nickname}","${params.phone}","${params.password}","${params.tradepassword}","${params.invatation}","${invatation()}","1","1","0.000","0.000","0.000")`).then(r => {
+                res.status(200).send({ code: 200, msg: '注册成功' })
+            }).catch(e => {
+                res.status(500).send({ code: 500, msg: '服务器异常，请重试' })
+            })
+        } else {
+            res.status(200).send({ code: 401, msg: '验证码错误' })
+        }
+    }).catch(e => {
+        res.status(500).send({ code: 500, msg: '服务器异常，请重试' })
+    })
 })
 
 //登陆 
 app.post('/login', (req, res) => {
-    if (req.body.sign && sign(req.body.sign)) {
-        sql(`select uid,password from user where phone = "${req.body.phone}"`).then(r => {
-            if (r[0] && r[0].password == req.body.password) {
-                res.status(200).send({ code: 200, msg: '登陆成功', token: jwtSign({ uid: r[0].uid }) })
-            } else {
-                res.status(200).send({ code: 401, msg: '账号或密码错误，请重试' })
-            }
-        }).catch(e => {
-            console.log(e);
-            res.status(500).send({ code: 500, msg: "未知错误，请重试" });
-        })
-    } else {
-        res.status(401).send({ code: 401, msg: "非法请求" });
-    }
+    sql(`select uid,password from user where phone = "${req.body.phone}"`).then(r => {
+        if (r[0] && r[0].password == req.body.password) {
+            res.status(200).send({ code: 200, msg: '登陆成功', token: jwtSign({ uid: r[0].uid }) })
+        } else {
+            res.status(200).send({ code: 401, msg: '账号或密码错误，请重试' })
+        }
+    }).catch(e => {
+        console.log(e);
+        res.status(500).send({ code: 500, msg: "未知错误，请重试" });
+    })
 })
 
 //发送短信接口
 app.post('/sms-send', (req, res) => {
     let code = rand(100000, 999999)
-    if (req.body.sign && sign(req.body.sign)) {
-        sql(`select phone from user where phone = "${req.body.phone}"`).then(r => {
-            if (r[0]) {
-                res.status(200).send({ code: 201, msg: "该手机号已被注册" })
-            } else {
-                sendSms(req.body.phone, code, success => {
-                    if (success.SendStatusSet[0].Code == 'Ok') {
-                        sql(`insert into code (msgId,code,stamp) values ("${success.RequestId}","${code}","${new Date().getTime()}")`).then(r => {
-                            res.status(200).send({ code: 200, msgId: success.RequestId });
-                        }).catch(e => {
-                            res.status(500).send({ code: 500, msg: '服务器异常' });
-                        })
-                    } else {
-                        res.status(500).send({ code: 500, msg: '验证码发送失败' });
-                    }
-                }, error => {
-                    res.status(500).send({ code: 500, msg: '服务器异常' });
-                })
-            }
-        }).catch(e => res.status(500).send({ code: 500, msg: "服务器异常" }))
-    } else {
-        res.status(200).send({ code: 401, msg: '非法请求' })
-    }
+    sql(`select phone from user where phone = "${req.body.phone}"`).then(r => {
+        if (r[0]) {
+            res.status(200).send({ code: 201, msg: "该手机号已被注册" })
+        } else {
+            sendSms(req.body.phone, code, success => {
+                if (success.SendStatusSet[0].Code == 'Ok') {
+                    sql(`insert into code (msgId,code,stamp) values ("${success.RequestId}","${code}","${new Date().getTime()}")`).then(r => {
+                        res.status(200).send({ code: 200, msgId: success.RequestId });
+                    }).catch(e => {
+                        res.status(500).send({ code: 500, msg: '服务器异常' });
+                    })
+                } else {
+                    res.status(500).send({ code: 500, msg: '验证码发送失败' });
+                }
+            }, error => {
+                res.status(500).send({ code: 500, msg: '服务器异常' });
+            })
+        }
+    }).catch(e => res.status(500).send({ code: 500, msg: "服务器异常" }))
 })
 
+//sfz认证四要素
+app.post('/nametrue', (req, res) => {
+    verify(req.headers.authorization, (ee, rr) => {
+        if (ee) {
+            res.status(401).send({ code: 401, msg: "非法请求" })
+        } else {
+            sql(`select phone,nametrue from user where uid = ${rr.uid}`).then(r => {
+                if (r[0].phone == req.body.mobile && r[0].nametrue == "1") {
+                    verifysfz(req.body, (error, success) => {
+                        if (error) {
+                            res.status(200).send({ result: 3, msg: '当前火爆，请稍后再试' })
+                        } else {
+                            if (success.data.result == 0) {
+                                sql(`update user set name="${req.body.name}",mobile="${req.body.mobile}",bankcard="${req.body.bankcard}",idcard="${req.body.idcard}",nametrue="0" where uid = ${rr.uid}`).then(rrr => {
+                                    res.status(200).send({ result: 0, msg: '认证成功' })
+                                }).catch(eee => {
+                                    console.log(eee);
+                                    res.status(500).send({ code: 500, msg: "服务器异常，请重试" })
+                                })
+                            } else {
+                                res.status(200).send({ result: 1, msg: '请输入正确的信息' })
+                            }
+                        }
+                    });
+                } else {
+                    res.status(200).send({ result: 2, msg: '手机号码不匹配,或已经被实名' })
+                }
+            }).catch(e => {
+                res.status(500).send({ code: 500, msg: "服务器异常，请重试" })
+            })
+        }
+    })
+})
+//检查是否认证
+app.post('/checknametrue', (req, res) => {
+    verify(req.headers.authorization, (ee, rr) => {
+        if (ee) {
+            res.status(401).send({ code: 401, msg: "非法请求" })
+        } else {
+            sql(`select nametrue from user where uid = ${rr.uid}`).then(r => {
+                if (r[0].nametrue == "0") {
+                    res.status(200).send({ result: 0, msg: "已经实名过了" })
+                } else {
+                    res.status(200).send({ result: 1, msg: "请实名" })
+                }
+            }).catch(e => {
+                res.status(500).send({ code: 500, msg: "服务器错误" })
+            })
+        }
+    });
+})
+//绑定支付宝
+app.post("/bindzfpay", (req, res) => {
+    verify(req.headers.authorization, (ee, rr) => {
+        if (ee) {
+            res.status(401).send({ code: 401, msg: "非法请求" })
+        } else {
+            sql(`select nametrue,zftrue from user where uid = ${rr.uid}`).then(r => {
+                if (r[0].nametrue == "1") {
+                    res.status(200).send({ result: 1, msg: "请先进行实名认证" })
+                } else {
+                    if (r[0].zftrue == "0") {
+                        res.status(200).send({ result: 0, msg: "你已经认证过" })
+                    } else {
+                        sql(`update  user set zfpay = "${req.body.zfpay}" where uid = "${rr.uid}"`).then(rrr => {
+                            sql(`update  user set zftrue = "0" where uid = "${rr.uid}"`).then(rrrr => {
+                                sql(`insert into buycomputer (uid,id,name,price,suanli,day,output,date) values ("${rr.uid}","A3820","体验矿机","0.000","0.000","40","10.000","${new Date().getTime()}")`).then(rrrrr => {
+                                    sql(`insert into recover (uid,coin,date) values("${rr.uid}","0.000","${new Date().getTime()}")`).then(r_ => {
+                                        res.status(200).send({ result: 0, msg: "支付宝认证成功" });
+                                    }).catch(e_ => {
+                                        console.log(e_)
+                                    })
+                                }).catch(eeeee => {
+                                    console.log(eeeee);
+                                    res.status(500).send({ code: 500, msg: "服务器错误" })
+                                })
+                            }).catch(e => {
+                                res.status(500).send({ code: 500, msg: "服务器错误" })
+                            })
+                        }).catch(e => {
+                            res.status(500).send({ code: 500, msg: "服务器错误" })
+                        })
+                    }
+                }
+            }).catch(e => {
+                res.status(500).send({ code: 500, msg: "服务器错误" })
+            })
+        }
+    })
+})
+//  获取矿机
+app.post('/computer', (req, res) => {
+    verify(req.headers.authorization, (ee, rr) => {
+        if (ee) {
+            res.status(401).send({ code: 401, msg: "非法请求" })
+        } else {
+            sql(`select * from computer`).then(r => {
+                res.status(200).send({ code: 200, r })
+            }).catch(e => {
+                res.status(500).send({ code: 500, msg: "服务器错误" })
+            })
+        }
+    });
+})
+// 购买矿机
+app.post('/buycomputer', (req, res) => {
+    verify(req.headers.authorization, (ee, rr) => {
+        if (ee) {
+            res.status(401).send({ code: 401, msg: "非法请求" })
+        } else {
+            if (req.body.id == "A3820") {
+                res.status(200).send({ code: 200, msg: "此矿机为实名认证赠送，不可购买" })
+            } else {
+                sql(`select * from computer where id = "${req.body.id}"`).then(r => {
+                    if (r[0].id) {
+                        sql(`select coin,suanli from user where uid = "${rr.uid}"`).then(rrr => {
+                            if (toNumber(rrr[0].coin) - toNumber(r[0].price) >= 0) {
+                                sql(`update user set coin = "${((toNumber(rrr[0].coin) - toNumber(r[0].price)) / 10000).toFixed(5)}",suanli= "${((toNumber(rrr[0].suanli) + toNumber(r[0].suanli)) / 10000).toFixed(3)}" where uid = "${rr.uid}"`).then(rrrr => {
+                                    sql(`insert into buycomputer (uid,id,name,price,suanli,day,output,date) values ("${rr.uid}","${r[0].id}","${r[0].name}","${r[0].price}","${r[0].suanli}","${r[0].day}","${r[0].output}","${new Date().getTime()}")`).then(rrrrr => {
+                                        res.status(200).send({ code: 200, msg: "兑换成功" });
+                                    }).catch(eeeee => {
+                                        res.status(500).send({ code: 500, msg: "服务器错误" })
+                                    })
+                                }).catch(eeee => {
+                                    res.status(500).send({ code: 500, msg: "服务器错误" })
+                                })
+                            } else {
+                                res.status(200).send({ code: 200, msg: "你的余额不足以兑换" })
+                            }
+                        }).catch(eee => {
+                            res.status(500).send({ code: 500, msg: "服务器错误" })
+                        })
+                    }
+                }).catch(e => {
+                    res.status(500).send({ code: 500, msg: "服务器错误" })
+                })
+            }
+        }
+    });
+})
 
+//获取已经购买的矿机
+app.post("/mycomputer", (req, res) => {
+    verify(req.headers.authorization, (ee, rr) => {
+        if (ee) {
+            res.status(401).send({ code: 401, msg: "非法请求" })
+        } else {
+            sql(`select id,name,price,suanli,day,output,date from buycomputer where uid = "${rr.uid}"`).then(r => {
+                if (r) {
+                    let rrr = r.map(result => {
+                        if (new Date().getTime() - result.date <= 86400000 * result.day) {
+                            Object.assign(result, { status: 0 })
+                        } else {
+                            Object.assign(result, { status: 1 })
+                        }
+                        return result
+                    })
+                    res.status(200).send({ code: 200, msg: "成功", data: rrr })
+                } else {
+                    res.status(200).send({ code: 200, msg: "成功", data: r })
+                }
+            }).catch(e => {
+                console.log(e)
+            })
+        }
+    })
+})
+//挖矿
+app.post("/recover", (req, res) => {
+    verify(req.headers.authorization, (ee, rr) => {
+        if (ee) {
+            res.status(401).send({ code: 401, msg: "非法请求" })
+        } else {
 
+        }
+    })
+})
 //创建订单
 app.get('/pay', (req, res) => {
     let goods = {
@@ -134,71 +305,11 @@ app.get('/pay', (req, res) => {
 
 //查询订单
 app.get('/checkPay', (req, res) => {
-    let out_trade_no = '1597908959706';
+    let out_trade_no = '1599301388585';
     checkOrder(out_trade_no).then(resp => {
         console.log(resp);
         res.status(200).send(resp);
     })
-})
-
-//sfz认证四要素
-app.post('/nametrue', (req, res) => {
-    if (req.body.sign && sign(req.body.sign)) {
-        verify(req.headers.authorization, (ee, rr) => {
-            if (ee) {
-                res.status(401).send({ code: 401, msg: "非法请求" })
-            } else {
-                sql(`select phone,nametrue from user where uid = ${rr.uid}`).then(r => {
-                    if (r[0].phone == req.body.mobile && r[0].nametrue == "1") {
-                        verifysfz(req.body, (error, success) => {
-                            if (error) {
-                                res.status(200).send({ result: 3, msg: '当前火爆，请稍后再试' })
-                            } else {
-                                if (success.data.result == 0) {
-                                    sql(`update user set name="${req.body.name}",mobile="${req.body.mobile}",bankcard="${req.body.bankcard}",idcard="${req.body.idcard}",nametrue="0" where uid = ${rr.uid}`).then(rrr => {
-                                        res.status(200).send({ result: 0, msg: '认证成功' })
-                                    }).catch(eee => {
-                                        console.log(eee);
-                                        res.status(500).send({ code: 500, msg: "服务器异常，请重试" })
-                                    })
-                                } else {
-                                    res.status(200).send({ result: 1, msg: '请输入正确的信息' })
-                                }
-                            }
-                        });
-                    } else {
-                        res.status(200).send({ result: 2, msg: '手机号码不匹配,或已经被实名' })
-                    }
-                }).catch(e => {
-                    res.status(500).send({ code: 500, msg: "服务器异常，请重试" })
-                })
-            }
-        })
-    } else {
-        res.status(401).send({ code: 401, msg: "非法请求" })
-    }
-})
-//检查是否认证
-app.post('/checknametrue',(req,res)=>{
-    if(req.body.sign && sign(req.body.sign)){
-        verify(req.headers.authorization, (ee, rr) => {
-            if(ee){
-                res.status(401).send({ code: 401, msg: "非法请求" })
-            }else{
-                sql(`select nametrue from user where uid = ${rr.uid}`).then(r=>{
-                    if(r[0].nametrue == "0"){
-                        res.status(200).send({result:0,msg:"已经实名过了"})
-                    }else{
-                        res.status(200).send({result:1,msg:"请实名"})
-                    }
-                }).catch(e=>{
-                    res.status(500).send({ code: 500, msg: "服务器错误" })
-                })
-            }
-        });
-    }else{
-        res.status(401).send({ code: 401, msg: "非法请求" })
-    }
 })
 
 
