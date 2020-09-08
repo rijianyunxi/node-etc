@@ -63,7 +63,7 @@ app.post('/register', (req, res) => {
     let params = req.body;
     sql(`select * from code where msgId = "${params.msgId}" order by stamp desc limit 1`).then(r => {
         if (r[0].code == params.code && new Date().getTime() - r[0].stamp < 300000) {
-            sql(`insert into user (uid,nickname,phone,password,tradepassword,invatation,invatationcode,zftrue,nametrue,coin,usdt,suanli,invatate,registertime) values (uid,"${params.nickname}","${params.phone}","${params.password}","${params.tradepassword}","${params.invatation}","${invatation()}","1","1","0.000","0.000","0.000","0","${new Date().getTime()}")`).then(r => {
+            sql(`insert into user (uid,nickname,phone,password,tradepassword,invatation,invatationcode,zftrue,nametrue,coin,usdt,suanli,invatate,teamsuanli,registertime) values (uid,"${params.nickname}","${params.phone}","${params.password}","${params.tradepassword}","${params.invatation}","${invatation()}","1","1","0.000","0.000","0.000","0","0.000","${new Date().getTime()}")`).then(r => {
                 res.status(200).send({ code: 200, msg: '注册成功' })
             }).catch(e => {
                 res.status(500).send({ code: 500, msg: '服务器异常，请重试' })
@@ -153,11 +153,9 @@ app.post('/checknametrue', (req, res) => {
         if (ee) {
             res.status(401).send({ code: 401, msg: "非法请求" })
         } else {
-            sql(`select nametrue from user where uid = ${rr.uid}`).then(r => {
-                if (r[0].nametrue == "0") {
-                    res.status(200).send({ result: 0, msg: "已经实名过了" })
-                } else {
-                    res.status(200).send({ result: 1, msg: "请实名" })
+            sql(`select nametrue,zftrue from user where uid = ${rr.uid}`).then(r => {
+                if (r[0]) {
+                    res.status(200).send({ code: 200, nametrue: r[0].nametrue, zftrue: r[0].zftrue })
                 }
             }).catch(e => {
                 res.status(500).send({ code: 500, msg: "服务器错误" })
@@ -233,11 +231,16 @@ app.post('/buycomputer', (req, res) => {
             } else {
                 sql(`select * from computer where id = "${req.body.id}"`).then(r => {
                     if (r[0].id) {
-                        sql(`select coin,suanli from user where uid = "${rr.uid}"`).then(rrr => {
+                        sql(`select coin,suanli,invatation from user where uid = "${rr.uid}"`).then(rrr => {
                             if (toNumber(rrr[0].coin) - toNumber(r[0].price) >= 0) {
-                                sql(`update user set coin = "${((toNumber(rrr[0].coin) - toNumber(r[0].price)) / 10000).toFixed(5)}",suanli= "${((toNumber(rrr[0].suanli) + toNumber(r[0].suanli)) / 10000).toFixed(3)}" where uid = "${rr.uid}"`).then(rrrr => {
+                                sql(`update user set coin = "${((toNumber(rrr[0].coin) - toNumber(r[0].price)) / 10000).toFixed(3)}",suanli= "${((toNumber(rrr[0].suanli) + toNumber(r[0].suanli)) / 10000).toFixed(3)}" where uid = "${rr.uid}"`).then(rrrr => {
+                                    //(teamsuanli*1000+${r[0].suanli}*1000)/1000+"" 
                                     sql(`insert into buycomputer (uid,id,name,price,suanli,day,output,date) values ("${rr.uid}","${r[0].id}","${r[0].name}","${r[0].price}","${r[0].suanli}","${r[0].day}","${r[0].output}","${new Date().getTime()}")`).then(rrrrr => {
-                                        res.status(200).send({ code: 200, msg: "兑换成功" });
+                                        sql(`update user set teamsuanli = teamsuanli + ${r[0].suanli} where invatationcode = "${rrr[0].invatation}"`).then(teamsuanli => {
+                                            res.status(200).send({ code: 200, msg: "兑换成功" });
+                                        }).catch(teamsuanlierr => {
+                                            res.status(500).send({ code: 500, msg: "服务器错误" });
+                                        })
                                     }).catch(eeeee => {
                                         res.status(500).send({ code: 500, msg: "服务器错误" })
                                     })
@@ -280,7 +283,7 @@ app.post("/mycomputer", (req, res) => {
                     res.status(200).send({ code: 200, msg: "成功", data: r })
                 }
             }).catch(e => {
-                console.log(e)
+                res.status(500).send({ code: 500, msg: "服务器错误" })
             })
         }
     })
@@ -293,19 +296,36 @@ app.post("/recover", (req, res) => {
         } else {
             sql(`select * from recover where uid = "${rr.uid}" order by date desc limit 1`).then(r => {
                 if (r[0].date - new Date(new Date().toLocaleDateString()).getTime() < 0) {
-                    // res.status(200).send({ code: 0, msg: "0.0001" })
                     sql(`select suanli,day,date from buycomputer where uid = "${rr.uid}"`).then(rrr => {
                         let suanli = rrr.map(item => {
                             if (new Date().getTime() - item.date < (item.day + 1) * 86400000) {
                                 return item.suanli * 1
                             }
                         }).reduce((a, b) => a + b);
-                        sql(`update user set suanli = "${suanli.toFixed(2)}" where uid = "${rr.uid}"`).then(rrrr => {
-                            let coin = (0.2 * rrr.length + 0.3 * suanli).toFixed(3);
-                            res.status(200).send({ code: 0, r: coin })
-                        }).catch(eeee => {
+                        sql(`select invatationcode,invatate,teamsuanli from user where uid = "${rr.uid}"`).then(invatationcode => {
+                            sql(`select invatate,teamsuanli from user where invatation = "${invatationcode[0].invatationcode}" and zftrue = "0"`).then(rrrr => {
+                                if (rrrr[0]) {
+                                    let teaminvatate = rrrr.map(item => item.invatate * 1).reduce((a, b) => a + b);
+                                    let teamsuanli = rrrr.map(item => item.teamsuanli * 1).reduce((a, b) => a + b);
+                                    // res.send({teaminvatate,teamsuanli});
+                                    let coin1 = (0.2 * rrr.length + 0.3 * suanli + (invatationcode[0].invatate * 0.2 + invatationcode[0].teamsuanli * 0.3) * 0.15 + (0.2 * teaminvatate + 0.3 * teamsuanli * 0.1) * 0.05).toFixed(3);
+                                    res.status(200).send({ code: 0, recover: coin1 })
+                                } else {
+                                    let coin2 = (0.2 * rrr.length + 0.3 * suanli).toFixed(3);
+                                    res.status(200).send({ code: 0, recover: coin2 })
+                                }
+                            }).catch(eeee => {
+                                res.status(500).send({ code: 500, msg: "服务器错误" })
+                            })
+                        }).catch(invatationcodeerr => {
                             res.status(500).send({ code: 500, msg: "服务器错误" })
                         })
+                        // sql(`update user set suanli = "${suanli.toFixed(2)}" where uid = "${rr.uid}"`).then(rrrr => {
+                        //     let coin = (0.2 * rrr.length + 0.3 * suanli).toFixed(3);
+                        //     res.status(200).send({ code: 0, r: coin })
+                        // }).catch(eeee => {
+                        //     res.status(500).send({ code: 500, msg: "服务器错误" })
+                        // })
                     }).catch(eee => {
                         res.status(200).send({ code: 2, msg: "请先完成实名，并且绑定支付宝" })
                     })
