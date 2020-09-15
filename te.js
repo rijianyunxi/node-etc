@@ -1,7 +1,7 @@
 const express = require('express')
 const axios = require('axios')
 const app = express();
-
+//static
 app.get('/', express.static('public'));
 
 app.get('/cha', (req, res) => {
