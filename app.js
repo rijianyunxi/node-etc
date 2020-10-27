@@ -338,6 +338,27 @@ app.post("/recover", (req, res) => {
         }
     })
 })
+
+//top榜
+app.post("/top", (req, res) => {
+    verify(req.headers.authorization, (ee, rr) => {
+        if (ee) {
+            res.status(401).send({ code: 401, msg: "非法请求" })
+        } else {
+            if (req.body.tag === 1) {
+                
+            } else {
+                let arr = ["invatate", "teaminvate", "suanli", "teamsuanli"];
+                sql(`select phone,nickname,${arr[req.body.tag]} from user order by ${arr[req.body.tag]} desc`).then(r => {
+                    console.log(r)
+                }).catch(e => {
+                    console.log(e)
+                })
+            }
+        }
+    })
+})
+
 //创建订单
 app.get('/pay', (req, res) => {
     let goods = {
